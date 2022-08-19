@@ -35,7 +35,7 @@ void I2C_Read(uint8_t ADDR, uint8_t *i2cBif, uint8_t NofData) {
 	MPUADDR = (MPU_ADDR << 1);
 	i2cBuf[0] = ADDR;
 	HAL_I2C_Master_Transmit(&i2cHandler, MPUADDR, i2cBuf, 1, 10);
-	HAL_I2C_Master_Receive(&i2cHandler, MPUADDR, i2cBif, NofData, 50);
+	HAL_I2C_Master_Receive(&i2cHandler, MPUADDR, i2cBif, NofData, 100);
 }
 
 //3- i2c Write
@@ -154,16 +154,6 @@ void MPU6050_Set_FSYNC(enum EXT_SYNC_SET_ENUM ext_Sync) {
 
 }
 
-//void I2C_Read_IT(uint8_t ADDR, uint8_t *i2cBif, uint8_t NofData) {
-//	uint8_t i2cBuf[2];
-//	uint8_t MPUADDR;
-//	//Need to Shift address to make it proper to i2c operation
-//	MPUADDR = (MPU_ADDR << 1);
-//	i2cBuf[0] = ADDR;
-//	HAL_I2C_Master_Transmit_IT(&i2cHandler, MPUADDR, i2cBuf, 1); //, 10);
-//	HAL_I2C_Master_Receive_IT(&i2cHandler, MPUADDR, i2cBif, NofData); //, 50);
-//}
-
 //9- Get Accel Raw Data
 void MPU6050_Get_Accel_RawData(RawData_Def *rawDef) {
 	uint8_t i2cBuf[2];
@@ -240,4 +230,3 @@ void _Accel_Cali(float x_min, float x_max, float y_min, float y_max,
 	//3* Z-Axis calibrate
 	A_Z_Bias = (z_max + z_min) / 2.0f;
 }
-
