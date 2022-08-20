@@ -21,12 +21,10 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include <stdio.h>
-#define MAX 100
+#include <string.h>
 #include "MPU6050.h"
-//#include "ssd1306.h"
-#include "fonts.h"
-
+#include "ssd1306.h"
+#include "ssd1306_defines.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -44,7 +42,11 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+I2C_HandleTypeDef hi2c1;
 I2C_HandleTypeDef hi2c2;
+DMA_HandleTypeDef hdma_i2c2_tx;
+
+UART_HandleTypeDef huart1;
 
 /* USER CODE BEGIN PV */
 
@@ -53,6 +55,9 @@ I2C_HandleTypeDef hi2c2;
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
+static void MX_DMA_Init(void);
+static void MX_I2C1_Init(void);
+static void MX_USART1_UART_Init(void);
 static void MX_I2C2_Init(void);
 /* USER CODE BEGIN PFP */
 
@@ -62,28 +67,165 @@ static void MX_I2C2_Init(void);
 /* USER CODE BEGIN 0 */
 RawData_Def myAccelRaw, myGyroRaw;
 ScaledData_Def myAccelScaled, myGyroScaled;
-char buf[MAX];
 int buff_size = 200;
 float acc_queue[200][3] = { { 0 } };
 float gyro_queue[200][3] = { { 0 } };
 int acc_gyro_packet[6] = { 0 };
 
+int count = 0;
 int buff_read_count = 0;
 int buff_write_count = 0;
 
-//void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart) {
-//	acc_gyro_packet[0] = acc_queue[buff_write_count][0];
-//	acc_gyro_packet[1] = acc_queue[buff_write_count][1];
-//	acc_gyro_packet[2] = acc_queue[buff_write_count][2];
-//
-//	acc_gyro_packet[3] = acc_queue[buff_write_count][0];
-//	acc_gyro_packet[4] = acc_queue[buff_write_count][1];
-//	acc_gyro_packet[5] = acc_queue[buff_write_count][2];
-//
-//	HAL_UART_Transmit_IT(&huart1, acc_gyro_packet, sizeof(acc_gyro_packet));
-//	buff_write_count += 1;
-//	buff_write_count %= buff_size;
-//}
+void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart) {
+	acc_gyro_packet[0] = acc_queue[buff_write_count][0];
+	acc_gyro_packet[1] = acc_queue[buff_write_count][1];
+	acc_gyro_packet[2] = acc_queue[buff_write_count][2];
+
+	acc_gyro_packet[3] = gyro_queue[buff_write_count][0];
+	acc_gyro_packet[4] = gyro_queue[buff_write_count][1];
+	acc_gyro_packet[5] = gyro_queue[buff_write_count][2];
+
+	HAL_UART_Transmit_IT(&huart1, acc_gyro_packet, sizeof(acc_gyro_packet));
+	buff_write_count += 1;
+	buff_write_count %= buff_size;
+	count = 0;
+}
+
+void drawLines() {
+	for (int16_t i = 0; i < ssd1306_GetWidth(); i += 4) {
+		ssd1306_DrawLine(0, 0, i, ssd1306_GetHeight() - 1);
+		ssd1306_UpdateScreen();
+//		HAL_Delay(10);
+	}
+	for (int16_t i = 0; i < ssd1306_GetHeight(); i += 4) {
+		ssd1306_DrawLine(0, 0, ssd1306_GetWidth() - 1, i);
+		ssd1306_UpdateScreen();
+//		HAL_Delay(10);
+	}
+//	HAL_Delay(250);
+
+	ssd1306_Clear();
+	for (int16_t i = 0; i < ssd1306_GetWidth(); i += 4) {
+		ssd1306_DrawLine(0, ssd1306_GetHeight() - 1, i, 0);
+		ssd1306_UpdateScreen();
+//		HAL_Delay(10);
+	}
+	for (int16_t i = ssd1306_GetHeight() - 1; i >= 0; i -= 4) {
+		ssd1306_DrawLine(0, ssd1306_GetHeight() - 1, ssd1306_GetWidth() - 1, i);
+		ssd1306_UpdateScreen();
+//		HAL_Delay(10);
+	}
+//	HAL_Delay(250);
+	ssd1306_Clear();
+	for (int16_t i = ssd1306_GetWidth() - 1; i >= 0; i -= 4) {
+		ssd1306_DrawLine(ssd1306_GetWidth() - 1, ssd1306_GetHeight() - 1, i, 0);
+		ssd1306_UpdateScreen();
+//		HAL_Delay(10);
+	}
+	for (int16_t i = ssd1306_GetHeight() - 1; i >= 0; i -= 4) {
+		ssd1306_DrawLine(ssd1306_GetWidth() - 1, ssd1306_GetHeight() - 1, 0, i);
+		ssd1306_UpdateScreen();
+//		HAL_Delay(10);
+	}
+//	HAL_Delay(250);
+	ssd1306_Clear();
+	for (int16_t i = 0; i < ssd1306_GetHeight(); i += 4) {
+		ssd1306_DrawLine(ssd1306_GetWidth() - 1, 0, 0, i);
+		ssd1306_UpdateScreen();
+//		HAL_Delay(10);
+	}
+	for (int16_t i = 0; i < ssd1306_GetWidth(); i += 4) {
+		ssd1306_DrawLine(ssd1306_GetWidth() - 1, 0, i, ssd1306_GetHeight() - 1);
+		ssd1306_UpdateScreen();
+//		HAL_Delay(10);
+	}
+//	HAL_Delay(250);
+}
+
+// Adapted from Adafruit_SSD1306
+void drawRect(void) {
+	for (int16_t i = 0; i < ssd1306_GetHeight() / 2; i += 2) {
+		ssd1306_DrawRect(i, i, ssd1306_GetWidth() - 2 * i,
+				ssd1306_GetHeight() - 2 * i);
+		ssd1306_UpdateScreen();
+//		HAL_Delay(10);
+	}
+}
+
+// Adapted from Adafruit_SSD1306
+void fillRect(void) {
+	uint8_t color = 1;
+	for (int16_t i = 0; i < ssd1306_GetHeight() / 2; i += 3) {
+		ssd1306_SetColor((color % 2 == 0) ? Black : White); // alternate colors
+		ssd1306_FillRect(i, i, ssd1306_GetWidth() - i * 2,
+				ssd1306_GetHeight() - i * 2);
+		ssd1306_UpdateScreen();
+//		HAL_Delay(10);
+		color++;
+	}
+	// Reset back to WHITE
+	ssd1306_SetColor(White);
+}
+
+// Adapted from Adafruit_SSD1306
+void drawCircle(void) {
+	for (int16_t i = 0; i < ssd1306_GetHeight(); i += 2) {
+		ssd1306_DrawCircle(ssd1306_GetWidth() / 2, ssd1306_GetHeight() / 2, i);
+		ssd1306_UpdateScreen();
+		HAL_Delay(10);
+	}
+	HAL_Delay(1000);
+	ssd1306_Clear();
+
+	// This will draw the part of the circel in quadrant 1
+	// Quadrants are numberd like this:
+	//   0010 | 0001
+	//  ------|-----
+	//   0100 | 1000
+	//
+	ssd1306_DrawCircleQuads(ssd1306_GetWidth() / 2, ssd1306_GetHeight() / 2,
+			ssd1306_GetHeight() / 4, 0x01 /*0b00000001*/);
+	ssd1306_UpdateScreen();
+//	HAL_Delay(200);
+	ssd1306_DrawCircleQuads(ssd1306_GetWidth() / 2, ssd1306_GetHeight() / 2,
+			ssd1306_GetHeight() / 4, 0x03 /*0b00000011*/);
+	ssd1306_UpdateScreen();
+//	HAL_Delay(200);
+	ssd1306_DrawCircleQuads(ssd1306_GetWidth() / 2, ssd1306_GetHeight() / 2,
+			ssd1306_GetHeight() / 4, 0x07 /*0b00000111*/);
+	ssd1306_UpdateScreen();
+//	HAL_Delay(200);
+	ssd1306_DrawCircleQuads(ssd1306_GetWidth() / 2, ssd1306_GetHeight() / 2,
+			ssd1306_GetHeight() / 4, 0x0F /*0b00001111*/);
+	ssd1306_UpdateScreen();
+}
+
+void drawProgressBarDemo(int counter) {
+	char str[128];
+	// draw the progress bar
+	ssd1306_DrawProgressBar(0, 32, 120, 10, counter);
+
+	// draw the percentage as String
+	ssd1306_SetCursor(64, 15);
+	sprintf(str, "%i%%", counter);
+	ssd1306_WriteString(str, Font_7x10);
+	ssd1306_UpdateScreen();
+}
+
+void mainApp(void) {
+	drawLines();
+	ssd1306_Clear();
+
+	drawRect();
+	ssd1306_Clear();
+
+	fillRect();
+	ssd1306_Clear();
+
+	drawCircle();
+	ssd1306_Clear();
+
+}
 
 /* USER CODE END 0 */
 
@@ -115,11 +257,18 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();
+  MX_I2C1_Init();
+  MX_USART1_UART_Init();
   MX_I2C2_Init();
   /* USER CODE BEGIN 2 */
 
-	// 1.Initailize Setup
-	MPU6050_Init(&hi2c2);
+	MPU6050_Init(&hi2c1);
+	ssd1306_Init();
+	ssd1306_FlipScreenVertically();
+	ssd1306_Clear();
+	ssd1306_SetColor(White);
+
 	//2. Configure Accel and Gyro parameters
 	myMpuConfig.Accel_Full_Scale = AFS_SEL_4g;
 	myMpuConfig.ClockSource = Internal_8MHz;
@@ -128,27 +277,30 @@ int main(void)
 	myMpuConfig.Sleep_Mode_Bit = 0;  //1: sleep mode, 0: normal mode
 	MPU6050_Config(&myMpuConfig);
 
-//	HAL_UART_Transmit_IT(&huart1, acc_gyro_packet, sizeof(acc_gyro_packet));
+	HAL_UART_Transmit_IT(&huart1, acc_gyro_packet, sizeof(acc_gyro_packet));
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+
 	while (1) {
 		MPU6050_Get_Accel_Scale(&myAccelScaled);
 		MPU6050_Get_Gyro_Scale(&myGyroScaled);
 
-//		acc_queue[buff_read_count % buff_size][0] = myAccelScaled.x;
-//		acc_queue[buff_read_count % buff_size][1] = myAccelScaled.y;
-//		acc_queue[buff_read_count % buff_size][2] = myAccelScaled.z;
-//
-//		gyro_queue[buff_read_count % buff_size][0] = myGyroScaled.x;
-//		gyro_queue[buff_read_count % buff_size][1] = myGyroScaled.y;
-//		gyro_queue[buff_read_count % buff_size][2] = myGyroScaled.z;
-//
-//		buff_read_count += 1;
-//		buff_read_count %= buff_size;
-		HAL_Delay(10);
+		acc_queue[buff_read_count % buff_size][0] = myAccelScaled.x;
+		acc_queue[buff_read_count % buff_size][1] = myAccelScaled.y;
+		acc_queue[buff_read_count % buff_size][2] = myAccelScaled.z;
 
+		gyro_queue[buff_read_count % buff_size][0] = myGyroScaled.x;
+		gyro_queue[buff_read_count % buff_size][1] = myGyroScaled.y;
+		gyro_queue[buff_read_count % buff_size][2] = myGyroScaled.z;
+
+		buff_read_count += 1;
+		buff_read_count %= buff_size;
+		count++;
+		HAL_Delay(30);
+		mainApp();
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -203,6 +355,40 @@ void SystemClock_Config(void)
 }
 
 /**
+  * @brief I2C1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_I2C1_Init(void)
+{
+
+  /* USER CODE BEGIN I2C1_Init 0 */
+
+  /* USER CODE END I2C1_Init 0 */
+
+  /* USER CODE BEGIN I2C1_Init 1 */
+
+  /* USER CODE END I2C1_Init 1 */
+  hi2c1.Instance = I2C1;
+  hi2c1.Init.ClockSpeed = 400000;
+  hi2c1.Init.DutyCycle = I2C_DUTYCYCLE_2;
+  hi2c1.Init.OwnAddress1 = 0;
+  hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
+  hi2c1.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
+  hi2c1.Init.OwnAddress2 = 0;
+  hi2c1.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
+  hi2c1.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
+  if (HAL_I2C_Init(&hi2c1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN I2C1_Init 2 */
+
+  /* USER CODE END I2C1_Init 2 */
+
+}
+
+/**
   * @brief I2C2 Initialization Function
   * @param None
   * @retval None
@@ -218,7 +404,7 @@ static void MX_I2C2_Init(void)
 
   /* USER CODE END I2C2_Init 1 */
   hi2c2.Instance = I2C2;
-  hi2c2.Init.ClockSpeed = 100000;
+  hi2c2.Init.ClockSpeed = 400000;
   hi2c2.Init.DutyCycle = I2C_DUTYCYCLE_2;
   hi2c2.Init.OwnAddress1 = 0;
   hi2c2.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
@@ -237,6 +423,55 @@ static void MX_I2C2_Init(void)
 }
 
 /**
+  * @brief USART1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_USART1_UART_Init(void)
+{
+
+  /* USER CODE BEGIN USART1_Init 0 */
+
+  /* USER CODE END USART1_Init 0 */
+
+  /* USER CODE BEGIN USART1_Init 1 */
+
+  /* USER CODE END USART1_Init 1 */
+  huart1.Instance = USART1;
+  huart1.Init.BaudRate = 9600;
+  huart1.Init.WordLength = UART_WORDLENGTH_8B;
+  huart1.Init.StopBits = UART_STOPBITS_1;
+  huart1.Init.Parity = UART_PARITY_NONE;
+  huart1.Init.Mode = UART_MODE_TX_RX;
+  huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart1.Init.OverSampling = UART_OVERSAMPLING_16;
+  if (HAL_UART_Init(&huart1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN USART1_Init 2 */
+
+  /* USER CODE END USART1_Init 2 */
+
+}
+
+/**
+  * Enable DMA controller clock
+  */
+static void MX_DMA_Init(void)
+{
+
+  /* DMA controller clock enable */
+  __HAL_RCC_DMA1_CLK_ENABLE();
+
+  /* DMA interrupt init */
+  /* DMA1_Stream7_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Stream7_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Stream7_IRQn);
+
+}
+
+/**
   * @brief GPIO Initialization Function
   * @param None
   * @retval None
@@ -248,45 +483,24 @@ static void MX_GPIO_Init(void)
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOH_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
-  __HAL_RCC_GPIOD_CLK_ENABLE();
+  __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOD, GPIO_PIN_12, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_6, GPIO_PIN_SET);
 
-  /*Configure GPIO pin : PD12 */
-  GPIO_InitStruct.Pin = GPIO_PIN_12;
+  /*Configure GPIO pin : PC6 */
+  GPIO_InitStruct.Pin = GPIO_PIN_6;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
 }
 
 /* USER CODE BEGIN 4 */
 
 /* USER CODE END 4 */
-
-/**
-  * @brief  Period elapsed callback in non blocking mode
-  * @note   This function is called  when TIM6 interrupt took place, inside
-  * HAL_TIM_IRQHandler(). It makes a direct call to HAL_IncTick() to increment
-  * a global variable "uwTick" used as application time base.
-  * @param  htim : TIM handle
-  * @retval None
-  */
-void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
-{
-  /* USER CODE BEGIN Callback 0 */
-
-  /* USER CODE END Callback 0 */
-  if (htim->Instance == TIM6) {
-    HAL_IncTick();
-  }
-  /* USER CODE BEGIN Callback 1 */
-
-  /* USER CODE END Callback 1 */
-}
 
 /**
   * @brief  This function is executed in case of error occurrence.
@@ -313,8 +527,8 @@ void Error_Handler(void)
 void assert_failed(uint8_t *file, uint32_t line)
 {
   /* USER CODE BEGIN 6 */
-	/* User can add his own implementation to report the file name and line number,
-	   ex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
+  /* User can add his own implementation to report the file name and line number,
+     ex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
   /* USER CODE END 6 */
 }
 #endif /* USE_FULL_ASSERT */
